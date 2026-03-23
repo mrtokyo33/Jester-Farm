@@ -18,3 +18,16 @@ um loop infinito que:
 - captura input
 - atualizar a lógica
 - desenhar na tela
+
+## Build
+
+na pasta root
+```bash
+cmake -S .  -B build -G Ninja
+cmake --build build
+```
+
+## Run
+```bash
+./build/JesterIsle
+```
