@@ -12,3 +12,9 @@ O Jogo ainda está em desenvolvimento
 - SDL2_mixer
 - nlohmann_json
 - Cmake
+
+## Game Loop
+um loop infinito que:
+- captura input
+- atualizar a lógica
+- desenhar na tela
