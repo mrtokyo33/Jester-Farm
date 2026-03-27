@@ -101,6 +101,13 @@ void drawDiamondOutline(SDL_Renderer *renderer, int centerX, int centerY, int r,
     SDL_RenderDrawLine(renderer, leftX, leftY, topX, topY);
 }
 
+bool pointInDiamond(int px, int py, int cx, int cy, int w, int h) {
+    int dx = abs(px - cx);
+    int dy = abs(py - cy);
+
+    return (dx * (h / 2) + dy * (w / 2)) <= (w * h / 4);
+}
+
 SDL_Texture* loadTexture(SDL_Renderer* renderer, const char* path) {
     // fluxo: arquivo PNG -> SDL_Surface (memória RAM) -> SDL_Texture (GPU) -> desenhar na tela
 
@@ -259,13 +266,16 @@ int main(int argc, char* argv[]) {
             float colF = screenToGridCol(mouseX, mouseY);
             float linF = screenToGridLin(mouseX, mouseY);
 
-            int col = static_cast<int>(floor(colF));
-            int lin = static_cast<int>(floor(linF));
+            int col = static_cast<int>(floor(colF + 0.5f));
+            int lin = static_cast<int>(floor(linF + 0.5f));
 
             if (col >= 0 && col < GRID_COL && lin >= 0 && lin < GRID_LIN) {
-                plotHover = lin * GRID_COL + col;
-            } else {
-                plotHover = -1;
+                int screenX = isoToScreenX(col, lin);
+                int screenY = isoToScreenY(col, lin);
+
+                if (pointInDiamond(mouseX, mouseY, screenX, screenY, TILE_WIDTH, TILE_HEIGHT)) {
+                    plotHover = lin * GRID_COL + col;
+                }
             }
         }
 
