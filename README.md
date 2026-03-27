@@ -24,6 +24,39 @@ um loop infinito que:
 - atualizar a lógica
 - desenhar na tela
 
+## **Como funciona tile isométrico**
+
+cada canteiro será uma "matriz" com posição (x, y)
+cada Tile será: 64x43px (2:1) tendo um achatamento = profundidade
+
+o cálculo matemático é:
+
+- x = (col - lin) * (tile_w/2) + offsetX
+- y = (col + lin) * (tile_h/2) + offsetY
+
+estrutura de Dados:
+```cpp
+enum PlotState {
+    Blocked = 0,
+    Empty,
+    Planted,
+    Growing,
+    Mature, 
+    Harvested
+};
+
+struct Plot {
+    int col; 
+    int lin;
+    PlotState state;
+}
+```
+
+Para Desenhar irá ter:
+- Preencher com a cor do state
+- Borda do canteiro
+- Borda se tiver selecionado
+
 ## **Build**
 
 na pasta root

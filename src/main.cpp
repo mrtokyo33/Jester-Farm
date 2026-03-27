@@ -5,10 +5,101 @@
 #include <nlohmann/json.hpp>
 #include <iostream>
 
+// window settings & frame settings
 constexpr int WINDOW_WIDTH      = 1280;
 constexpr int WINDOW_HEIGHT     = 720; 
 constexpr int FPS_TARGET        = 60;
 constexpr int FRAME_DURATION_MS = 1000 / FPS_TARGET;
+
+// plot settings
+constexpr int TILE_WIDTH    = 64;
+constexpr int TILE_HEIGHT   = 32;
+
+constexpr int GRID_COL      = 7;
+constexpr int GRID_LIN      = 5;
+
+constexpr int OFFSET_X      = WINDOW_WIDTH / 2;
+constexpr int OFFSET_Y      = 200;
+
+constexpr int INITIAL_PLOTS = 6;
+
+// posição isométrica para posição X da tela
+int isoToScreenX(int col, int lin) {
+    return (col - lin) * (TILE_WIDTH / 2) + OFFSET_X;
+}
+
+// posição isométrica para posição Y da tela
+int isoToScreenY(int col, int lin) {
+    return (col + lin) * (TILE_HEIGHT / 2) + OFFSET_Y;
+}
+
+// a partir do mouse pegar qual coluna estou selecionando
+float screenToGridCol(int mouseX, int mouseY) {
+    float relX = (float)(mouseX - OFFSET_X);
+    float relY = (float)(mouseY - OFFSET_Y);
+
+    return (relX / (TILE_WIDTH / 2.0f) + relY / (TILE_HEIGHT / 2.0f)) / 2.0f;
+}
+
+// a partir do mouse pegar qual linha estou selecionando
+float screenToGridLin(int mouseX, int mouseY) {
+    float relX = (float)(mouseX - OFFSET_X);
+    float relY = (float)(mouseY - OFFSET_Y);
+
+    return (relY / (TILE_HEIGHT / 2.0f) - relX / (TILE_WIDTH / 2.0f)) / 2.0f;
+}
+
+// estados que um plot pode ter
+enum PlotState {
+    Blocked     = 0,
+    Empty       = 1,
+    Planted     = 2,
+    Growing     = 3,
+    Mature      = 4, 
+    Harvested   = 5
+};
+
+// modelo do plot
+struct Plot {
+    int col; 
+    int lin;
+    PlotState state;
+};
+
+// desenha a partir de um centro (x, y) e altura e largura um retangulo, preenchido
+void drawFilledDiamond(SDL_Renderer *renderer, int centerX, int centerY, int r, int g, int b, int width = TILE_WIDTH, int height = TILE_HEIGHT) {
+    SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+
+    // iteração para pintar todo
+    for (int dy = -height / 2; dy <= height / 2; dy ++) {
+        int halfWidth = (height / 2 - abs(dy)) * width / height;
+
+        SDL_RenderDrawLine(renderer, centerX - halfWidth, centerY + dy, centerX + halfWidth, centerY + dy);
+    }
+}
+
+// desenhar apenas o contorno do plot
+void drawDiamondOutline(SDL_Renderer *renderer, int centerX, int centerY, int r, int g, int b, int width = TILE_WIDTH, int height = TILE_HEIGHT) {
+    // definindo as posições do plot
+    int topX = centerX;
+    int topY = centerY - height / 2;
+
+    int rightX = centerX + width / 2;
+    int rightY = centerY;
+
+    int leftX = centerX - width / 2;
+    int leftY = centerY;
+
+    int downX = centerX;
+    int downY = centerY + height / 2; 
+
+    SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+
+    SDL_RenderDrawLine(renderer, topX, topY, rightX, rightY);
+    SDL_RenderDrawLine(renderer, rightX, rightY, downX, downY);
+    SDL_RenderDrawLine(renderer, downX, downY, leftX, leftY);
+    SDL_RenderDrawLine(renderer, leftX, leftY, topX, topY);
+}
 
 SDL_Texture* loadTexture(SDL_Renderer* renderer, const char* path) {
     // fluxo: arquivo PNG -> SDL_Surface (memória RAM) -> SDL_Texture (GPU) -> desenhar na tela
@@ -92,25 +183,27 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    SDL_Texture* textureTest = loadTexture(renderer, "./assets/image/playerDown.png");
+    // criando um array para cada plot
+    std::array<Plot, GRID_COL * GRID_LIN> plots;
 
-    if (!textureTest) {
-        std::cerr << "WARNING! Test Image not founded!" << std::endl;
-        std::cerr << "The Game will run without sprite for a while." << std::endl;
+    int plots_unlocked = 0;
+
+    // iteração de matriz para a definição dos plots
+    for (int i = 0; i < GRID_LIN; i++) {
+        for (int j=0; j < GRID_COL; j++) {
+            int index = i * GRID_COL + j;
+
+            plots[index].col = j;
+            plots[index].lin = i;
+
+            plots[index].state = (plots_unlocked < INITIAL_PLOTS) ? Empty : Blocked;
+            if (plots_unlocked < INITIAL_PLOTS) {
+                plots_unlocked++;
+            }
+        }
     }
 
-    int spriteWidth  = 0;
-    int spriteHeight = 0;
-    
-    if(textureTest) {
-        SDL_QueryTexture(textureTest, NULL, NULL, &spriteWidth, &spriteHeight); // obtém a largura e altura do sprite em px
-        std::cout << "Sprite Loaded: " << spriteWidth << "x" << spriteHeight << "px" << std::endl;
-    }
-
-    float spriteX = (WINDOW_WIDTH - spriteWidth) / 2.0f;
-    float spriteY = (WINDOW_HEIGHT - spriteHeight) / 2.0f;
-
-    float spriteSpd = 200.0f;
+    std::cout << "Farm: " << GRID_COL << "x" << GRID_LIN << " (" << INITIAL_PLOTS << " unlockeds)" << std::endl;
 
     bool running = true; 
 
@@ -119,6 +212,10 @@ int main(int argc, char* argv[]) {
 
     Uint32 previous_tick = SDL_GetTicks();
     float deltaTime = 0.0f;
+
+    int plotHover   = -1;
+    int mouseX      = 0;
+    int mouseY      = 0;
 
     while(running) {
         Uint32 current_tick = SDL_GetTicks();
@@ -130,6 +227,27 @@ int main(int argc, char* argv[]) {
                 running = false;
             }
 
+            if (event.type == SDL_MOUSEMOTION) {    // toda vez que movermos o mouse
+                mouseX = event.motion.x;
+                mouseY = event.motion.y;
+            }
+
+            if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {  // controlando o click esquerdo
+                if (plotHover >= 0) {
+                    Plot& p = plots[plotHover];
+
+                    std::cout << "Clicked (" << p.col << ", " << p.lin << "): ";
+                    switch (p.state) {
+                        case Blocked:   std::cout   << "BLOCKED"    << std::endl; break;
+                        case Empty:     std::cout   << "EMPTY"      << std::endl; break;
+                        case Planted:   std::cout   << "PLANTED"    << std::endl; break;
+                        case Growing:   std::cout   << "GROWING"    << std::endl; break;
+                        case Mature:    std::cout   << "MATURE"     << std::endl; break;
+                        case Harvested: std::cout   << "HARVESTED"  << std::endl; break;
+                    }
+                }
+            }
+
             if (event.type == SDL_KEYDOWN) {    
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     running = false;
@@ -137,34 +255,77 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        {
+            float colF = screenToGridCol(mouseX, mouseY);
+            float linF = screenToGridLin(mouseX, mouseY);
+
+            int col = static_cast<int>(floor(colF));
+            int lin = static_cast<int>(floor(linF));
+
+            if (col >= 0 && col < GRID_COL && lin >= 0 && lin < GRID_LIN) {
+                plotHover = lin * GRID_COL + col;
+            } else {
+                plotHover = -1;
+            }
+        }
+
         // array que guarda o state de todas as teclas pressionadas
         const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
 
-        // lógica de movimentação usando deltaTime
-        if (keyboardState[SDL_SCANCODE_UP]) {
-            spriteY -= spriteSpd * deltaTime;
-        }
-        if (keyboardState[SDL_SCANCODE_DOWN]) {
-            spriteY += spriteSpd * deltaTime;
-        }
-        if (keyboardState[SDL_SCANCODE_LEFT]) {
-            spriteX -= spriteSpd * deltaTime;
-        }
-        if (keyboardState[SDL_SCANCODE_RIGHT]) {
-            spriteX += spriteSpd * deltaTime;
-        }
-
-        SDL_SetRenderDrawColor(renderer, 12, 12, 12, 255);
+        SDL_SetRenderDrawColor(renderer, 87, 250, 40, 255);
         SDL_RenderClear(renderer);
 
-        if (textureTest) {
-            SDL_Rect dest;  // literalmente um retangulo, com susas posições (x,y) e tamanho (w,h)
-            dest.x = static_cast<int>(spriteX);
-            dest.y = static_cast<int>(spriteY);
-            dest.w = spriteWidth;
-            dest.h = spriteHeight;
+        // desenhando todos os plots com canteiros isométricos
+        for (int i = 0; i < GRID_LIN; i ++) {
+            for (int j = 0; j < GRID_COL; j++) {
+                int screenX = isoToScreenX(j, i);
+                int screenY = isoToScreenY(j, i);
 
-            SDL_RenderCopy(renderer, textureTest, NULL, &dest);
+                int index = i * GRID_COL + j;
+                Plot& p = plots[index];
+
+                switch(p.state) {
+                    case Blocked:
+                        drawFilledDiamond(renderer, screenX, screenY, 90, 90, 90);
+                        SDL_SetRenderDrawColor(renderer, 60, 60, 50, 255);
+                        SDL_RenderDrawLine(renderer, screenX - 8, screenY - 4, screenX + 8, screenY + 4);
+                        SDL_RenderDrawLine(renderer, screenX + 8, screenY - 4, screenX - 8, screenY + 4);
+                        break;
+
+                    case Empty:
+                        drawFilledDiamond(renderer, screenX, screenY, 139, 100, 60);
+                        break;
+
+                    case Planted:
+                        drawFilledDiamond(renderer, screenX, screenY, 120, 80, 45);
+                        SDL_SetRenderDrawColor(renderer, 50, 200, 50, 255);
+                        SDL_RenderDrawLine(renderer, screenX - 8, screenY - 4, screenX + 8, screenY + 4);
+                        break;
+
+                    case Mature: {
+                        drawFilledDiamond(renderer, screenX, screenY, 120, 80, 45);
+                        SDL_SetRenderDrawColor(renderer, 255, 80, 80, 255);
+                        SDL_Rect fruit = {screenX - 4, screenY - 6, 8, 8};
+                        SDL_RenderFillRect(renderer, &fruit);
+                        break;
+                    }
+
+                    case Harvested:
+                        drawFilledDiamond(renderer, screenX, screenY, 110, 95, 70);
+                        SDL_SetRenderDrawColor(renderer, 80, 70, 50, 255);
+                        SDL_RenderDrawLine(renderer, screenX - 6, screenY, screenX + 6, screenY);
+                        break;
+                }
+
+                if (p.state != Blocked) {
+                    drawDiamondOutline(renderer, screenX, screenY, 100, 70, 40);
+                }
+
+                if (index == plotHover) {
+                    drawDiamondOutline(renderer, screenX, screenY, 255, 255, 0);
+                    drawDiamondOutline(renderer, screenX, screenY, 255, 255, 100, TILE_WIDTH-4, TILE_HEIGHT - 2);
+                }
+            }
         }
 
         SDL_RenderPresent(renderer);
@@ -178,10 +339,6 @@ int main(int argc, char* argv[]) {
     }
 
     // limpeza já que o jogo não está mais rodando
-
-    if (textureTest) {
-        SDL_DestroyTexture(textureTest);
-    }
 
     SDL_DestroyRenderer(renderer);  
     SDL_DestroyWindow(window);

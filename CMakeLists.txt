@@ -12,11 +12,11 @@ find_package(SDL2_ttf REQUIRED)
 find_package(SDL2_mixer REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
-add_executable(JesterIsle 
+add_executable(JesterFarm 
     src/main.cpp
 )
 
-target_link_libraries(JesterIsle PRIVATE # private -> as dependências só são visíveis para o projeto internamente
+target_link_libraries(JesterFarm PRIVATE # private -> as dependências só são visíveis para o projeto internamente
     SDL2::SDL2                 
     SDL2_image::SDL2_image
     SDL2_ttf::SDL2_ttf
